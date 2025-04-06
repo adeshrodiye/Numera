@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.figure_factory as ff
 from io import StringIO
 import base64
 from datetime import datetime
@@ -18,7 +19,7 @@ from PIL import Image
 # Set page configuration
 st.set_page_config(
     page_title="Numera Analytics",
-    page_icon="📊",
+    page_icon="https://github.com/adeshrodiye/Numera/blob/main/numera.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -99,7 +100,17 @@ def create_logo():
 
 # Login screen
 def render_login():
-    initialize_session_state()  # Initialize session state variables
+    # Initialize session state variables
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'dark_theme' not in st.session_state:
+        st.session_state.dark_theme = False
+    if 'df' not in st.session_state:
+        st.session_state.df = None
+    if 'filename' not in st.session_state:
+        st.session_state.filename = None
+    if 'users' not in st.session_state:
+        st.session_state.users = {'admin': 'password', 'demo': 'demo'}
     
     st.title("Welcome to Numera Analytics")
     

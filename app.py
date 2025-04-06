@@ -15,8 +15,8 @@ from PIL import Image
 
 # Page config
 st.set_page_config(
-    page_title="Numera",
-    page_icon="C:/Users/adesh/Downloads/numera.png",
+    page_title="DataInsight Pro",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
