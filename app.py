@@ -20,6 +20,7 @@ from io import StringIO
 import json
 import re
 from streamlit_option_menu import option_menu
+import openpyxl
 
 # Set page config
 st.set_page_config(
