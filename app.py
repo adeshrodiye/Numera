@@ -352,6 +352,7 @@ def clean_data(df, methods=None):
     return df_cleaned
 
 def generate_insights(df):
+
     """Generate key insights from the data"""
     if df is None or df.empty:
         return []
@@ -447,117 +448,88 @@ def generate_insights(df):
     return insights[:5]  # Limit to top 5 insights
 
 def create_visualization(df, viz_type, columns, **kwargs):
-    """Create a visualization based on the specified type and columns"""
+    """
+    Create a Plotly visualization based on the specified type and columns.
+    Supported viz_type: 'histogram', 'bar', 'scatter', 'heatmap'.
+    """
     if df is None or df.empty:
         return None
-    
+
     try:
-        if viz_type == "histogram":
-            fig = px.histogram(df, x=columns[0], 
-                              nbins=kwargs.get('nbins', 20),
-                              marginal=kwargs.get('marginal', 'box'),
-                              title=f"Distribution of {columns[0]}",
-                              color_discrete_sequence=['#3366cc'])
-            
-        elif viz_type == "bar":
-            # Get value counts and sort if requested
-            value_counts = df[columns[0]].value_counts().reset_index()
-            value_counts.columns = [columns[0], 'count']
-            
-            if kwargs.get('sort', True):
-                value_counts = value_counts.sort_values('count', ascending=False)
-            
-            if len(value_counts) > 20:  # Limit to top 20 categories for readability
-                value_counts = value_counts.head(20)
-                title = f"Top 20 Categories in {columns[0]}"
+        fig = None
+        # Determine theme based on Streamlit settings
+        bg_color = st.get_option('theme.backgroundColor')
+        # Default to light theme if bg_color is not set
+        if bg_color:
+            hex_color = bg_color.lstrip('#')
+            if len(hex_color) == 6:
+                r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+                brightness = 0.299*r + 0.587*g + 0.114*b
+                theme_template = "plotly_dark" if brightness < 128 else "plotly_white"
             else:
-                title = f"Categories in {columns[0]}"
-                
-            fig = px.bar(value_counts, x=columns[0], y='count', 
-                        title=title,
-                        color_discrete_sequence=['#3366cc'])
-            
-        elif viz_type == "scatter":
-            fig = px.scatter(df, x=columns[0], y=columns[1],
-                            title=f"{columns[1]} vs {columns[0]}",
-                            opacity=0.7,
-                            color=kwargs.get('color', None),
-                            size=kwargs.get('size', None),
-                            trendline=kwargs.get('trendline', 'ols') if len(df) > 2 else None,
-                            color_discrete_sequence=['#3366cc'])
-            
-        elif viz_type == "line":
-            fig = px.line(df, x=columns[0], y=columns[1],
-                         title=f"{columns[1]} over {columns[0]}",
-                         color=kwargs.get('color', None),
-                         markers=kwargs.get('markers', True),
-                         color_discrete_sequence=['#3366cc'])
-            
-        elif viz_type == "box":
-            fig = px.box(df, y=columns[0],
-                        title=f"Box Plot of {columns[0]}",
-                        color=kwargs.get('color', None),
-                        notched=kwargs.get('notched', False),
-                        color_discrete_sequence=['#3366cc'])
-            
-        elif viz_type == "heatmap":
-            # For heatmap of correlations
-            if len(columns) > 1 and all(col in st.session_state.numerical_columns for col in columns):
-                corr = df[columns].corr()
-                fig = px.imshow(corr,
-                               title="Correlation Matrix",
-                               color_continuous_scale=kwargs.get('colorscale', 'RdBu_r'),
-                               zmin=-1, zmax=1)
-            # For heatmap of missing values
-            else:
-                # Create a binary mask of missing values (1 for missing, 0 for present)
-                missing_mask = df[columns].isnull().astype(int)
-                # Transpose for better visualization if there are many columns
-                if len(columns) > 10:
-                    missing_mask = missing_mask.T
-                    title = "Missing Value Patterns (Transposed)"
-                else:
-                    title = "Missing Value Patterns"
-                
-                fig = px.imshow(missing_mask,
-                               title=title,
-                               color_continuous_scale=kwargs.get('colorscale', 'Blues'),
-                               labels=dict(x="Data Points", y="Variables", color="Missing"))
-            
-        elif viz_type == "pie":
-            value_counts = df[columns[0]].value_counts()
-            
-            # If too many categories, limit to top ones
-            if len(value_counts) > 10:
-                other_count = value_counts[10:].sum()
-                value_counts = value_counts[:9].append(pd.Series([other_count], index=['Other']))
-                
-            fig = px.pie(values=value_counts.values, 
-                        names=value_counts.index,
-                        title=f"Distribution of {columns[0]}",
-                        hole=kwargs.get('hole', 0.3))
-            
+                theme_template = "plotly_white"
         else:
-            st.warning(f"Visualization type '{viz_type}' not supported.")
+            theme_template = "plotly_white"
+
+        # Create appropriate figure based on viz_type
+        if viz_type == "histogram" and len(columns) >= 1:
+            col = columns[0]
+            fig = px.histogram(
+                df, x=col,
+                nbins=kwargs.get('nbins', 20),
+                marginal=kwargs.get('marginal', 'box'),
+                title=f"Distribution of {col}",
+                color_discrete_sequence=['#3366cc']
+            )
+        elif viz_type == "bar" and len(columns) >= 1:
+            col = columns[0]
+            # Compute value counts for the categorical column
+            counts = df[col].value_counts(dropna=False).reset_index()
+            counts.columns = [col, 'count']
+            fig = px.bar(
+                counts, x=col, y='count',
+                title=f"Bar Chart of {col}",
+                color_discrete_sequence=['#109618']
+            )
+            fig.update_layout(xaxis={'categoryorder':'total descending'})
+        elif viz_type == "scatter" and len(columns) >= 2:
+            x_col, y_col = columns[0], columns[1]
+            fig = px.scatter(
+                df, x=x_col, y=y_col,
+                title=f"{y_col} vs {x_col}",
+                color_discrete_sequence=['#EF553B']
+            )
+        elif viz_type == "heatmap":
+            # Use provided columns for numeric correlation
+            corr_cols = columns if columns else df.select_dtypes(include='number').columns.tolist()
+            if len(corr_cols) >= 2:
+                corr_matrix = df[corr_cols].corr()
+                fig = px.imshow(
+                    corr_matrix, 
+                    text_auto=True, 
+                    aspect="auto",
+                    color_continuous_scale='RdBu',
+                    title="Correlation Matrix",
+                    labels=dict(x="Features", y="Features", color="Correlation"),
+                    zmin=-1, zmax=1
+                )
+        else:
+            st.warning(f"Unsupported visualization type or insufficient columns provided for {viz_type}.")
             return None
-        
-        # Add grid and improve layout
-        fig.update_layout(
-            template="plotly_white" if not st.session_state.dark_mode else "plotly_dark",
-            xaxis_title=columns[0] if len(columns) > 0 else "",
-            yaxis_title=columns[1] if len(columns) > 1 else "Count",
-            legend_title="Legend",
-            font=dict(family="Arial, sans-serif", size=12),
-            autosize=True,
-            margin=dict(l=50, r=50, b=100, t=100, pad=4),
-        )
-        
+
+        if fig is not None:
+            # Common layout updates
+            fig.update_layout(
+                margin=dict(l=40, r=40, t=60, b=40),
+                title_x=0.5,
+                template=theme_template
+            )
         return fig
-    
+
     except Exception as e:
-        st.error(f"Error creating visualization: {str(e)}")
+        st.error(f"Error creating {viz_type}: {e}")
         return None
-    
+ 
     
 
 # Main application after login
@@ -856,236 +828,96 @@ def display_summary_tab():
                         st.info("No changes were made during cleaning.")
 
 def display_visuals_tab():
-    """Display the visualizations tab content"""
-    display_header()
-    
-    st.markdown("## Data Visualizations")
-    
-    if st.session_state.data is None:
-        st.info("Please upload a file first using the sidebar.")
-        return
-    
+    """
+    Display automatic visualizations for the uploaded dataset with dynamic axis selection.
+    """
+    st.header("Data Visualizations")
     df = st.session_state.data
-    
-    # Visualization controls
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Visualization Controls")
-    
-    viz_types = {
-        "Histogram": "histogram", 
-        "Bar Chart": "bar", 
-        "Scatter Plot": "scatter", 
-        "Line Chart": "line", 
-        "Box Plot": "box", 
-        "Pie Chart": "pie", 
-        "Heatmap": "heatmap"
-    }
-    
-    viz_type = st.sidebar.selectbox("Visualization Type", list(viz_types.keys()))
-    
-    # Column selection based on visualization type
-    if viz_types[viz_type] in ["histogram", "bar", "box", "pie"]:
-        columns = st.sidebar.selectbox(
-            "Select Column",
-            options=df.columns.tolist(),
-            key=f"{viz_types[viz_type]}_column"
-        )
-        selected_columns = [columns]
-    
-    elif viz_types[viz_type] in ["scatter", "line"]:
-        col1 = st.sidebar.selectbox(
-            "X-Axis",
-            options=df.columns.tolist(),
-            key=f"{viz_types[viz_type]}_x"
-        )
-        
-        col2 = st.sidebar.selectbox(
-            "Y-Axis",
-            options=[c for c in df.columns if c != col1],
-            key=f"{viz_types[viz_type]}_y"
-        )
-        
-        color_by = st.sidebar.selectbox(
-            "Color By (Optional)",
-            options=["None"] + [c for c in df.columns if c not in [col1, col2] and df[c].nunique() <= 10],
-            key=f"{viz_types[viz_type]}_color"
-        )
-        
-        selected_columns = [col1, col2]
-        extra_args = {}
-        
-        if color_by != "None":
-            extra_args["color"] = color_by
-        
-        if viz_types[viz_type] == "scatter":
-            # Add trendline option
-            add_trendline = st.sidebar.checkbox("Add Trendline", value=False)
-            if add_trendline:
-                extra_args["trendline"] = "ols"
-            
-            # Add size option
-            size_by = st.sidebar.selectbox(
-                "Size By (Optional)",
-                options=["None"] + st.session_state.numerical_columns,
-                key="scatter_size"
-            )
-            
-            if size_by != "None":
-                extra_args["size"] = size_by
-    
-    elif viz_types[viz_type] == "heatmap":
-        if len(st.session_state.numerical_columns) > 1:
-            corr_option = st.sidebar.radio(
-                "Heatmap Type",
-                ["Correlation Matrix", "Missing Values Pattern"]
-            )
-            
-            if corr_option == "Correlation Matrix":
-                # Let user select numerical columns for correlation
-                selected_columns = st.sidebar.multiselect(
-                    "Select Columns for Correlation",
-                    options=st.session_state.numerical_columns,
-                    default=st.session_state.numerical_columns[:min(5, len(st.session_state.numerical_columns))]
+    if df is None or df.empty:
+        st.info("Please upload a dataset to generate visualizations.")
+        return
+
+    numeric_cols = df.select_dtypes(include='number').columns.tolist()
+    numeric_cols = [col for col in numeric_cols if df[col].nunique() > 1]
+    categorical_cols = df.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
+    categorical_cols = [col for col in categorical_cols if df[col].nunique() > 1 and df[col].nunique() < len(df)]
+
+    hist_cols = numeric_cols[:2] if numeric_cols else []
+    bar_cols = categorical_cols[:2] if categorical_cols else []
+    scatter_pairs = []
+    if len(numeric_cols) >= 2:
+        scatter_pairs.append((numeric_cols[0], numeric_cols[1]))
+        if len(numeric_cols) >= 3:
+            scatter_pairs.append((numeric_cols[0], numeric_cols[2]))
+        if len(categorical_cols) >= 2 and len(scatter_pairs) > 1:
+            scatter_pairs = scatter_pairs[:1]
+
+    visuals = []
+
+    for col in hist_cols:
+        visuals.append(("Histogram", [col]))
+
+    for col in bar_cols:
+        visuals.append(("Bar", [col]))
+
+    for x_col, y_col in scatter_pairs:
+        visuals.append(("Scatter", [x_col, y_col]))
+
+    if len(numeric_cols) >= 2:
+        visuals.append(("Heatmap", numeric_cols))
+
+    # Limit number of visuals
+    visuals = visuals[:10]
+
+    for idx, (viz_type, columns) in enumerate(visuals):
+        with st.expander(f"{viz_type} Visualization"):
+            if viz_type == "Histogram":
+                selected_col = st.selectbox(
+                    "Select X-axis column for Histogram:",
+                    numeric_cols,
+                    index=numeric_cols.index(columns[0]) if columns[0] in numeric_cols else 0,
+                    key=f"hist_x_{idx}"
                 )
-                
-                # Colorscale selection
-                colorscale = st.sidebar.selectbox(
-                    "Color Scale",
-                    options=["RdBu_r", "Viridis", "Plasma", "Blues", "Reds"],
-                    index=0
+                fig = create_visualization(df, "histogram", [selected_col])
+
+            elif viz_type == "Bar":
+                selected_col = st.selectbox(
+                    "Select X-axis column for Bar Chart:",
+                    categorical_cols,
+                    index=categorical_cols.index(columns[0]) if columns[0] in categorical_cols else 0,
+                    key=f"bar_x_{idx}"
                 )
-                
-                extra_args = {"colorscale": colorscale}
+                fig = create_visualization(df, "bar", [selected_col])
+
+            elif viz_type == "Scatter":
+                selected_x = st.selectbox(
+                    "Select X-axis for Scatter Plot:",
+                    numeric_cols,
+                    index=numeric_cols.index(columns[0]) if columns[0] in numeric_cols else 0,
+                    key=f"scatter_x_{idx}"
+                )
+                selected_y = st.selectbox(
+                    "Select Y-axis for Scatter Plot:",
+                    numeric_cols,
+                    index=numeric_cols.index(columns[1]) if columns[1] in numeric_cols else 1,
+                    key=f"scatter_y_{idx}"
+                )
+                fig = create_visualization(df, "scatter", [selected_x, selected_y])
+
+            elif viz_type == "Heatmap":
+                selected_cols = st.multiselect(
+                    "Select columns for Correlation Heatmap:",
+                    numeric_cols,
+                    default=columns,
+                    key=f"heatmap_cols_{idx}"
+                )
+                fig = create_visualization(df, "heatmap", selected_cols)
+
             else:
-                # Missing values pattern
-                selected_columns = st.sidebar.multiselect(
-                    "Select Columns",
-                    options=df.columns.tolist(),
-                    default=[col for col in df.columns if df[col].isnull().sum() > 0][:10]
-                )
-                
-                colorscale = st.sidebar.selectbox(
-                    "Color Scale",
-                    options=["Blues", "Reds", "Greens", "Purples"],
-                    index=0
-                )
-                
-                extra_args = {"colorscale": colorscale}
-        else:
-            st.warning("Not enough numerical columns for correlation heatmap.")
-            selected_columns = []
-            extra_args = {}
-    else:
-        selected_columns = []
-        extra_args = {}
-    
-    # Additional customization options based on visualization type
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Customization")
-    
-    if viz_types[viz_type] == "histogram":
-        nbins = st.sidebar.slider("Number of Bins", min_value=5, max_value=100, value=20)
-        marginal = st.sidebar.selectbox(
-            "Marginal Plot",
-            options=["None", "box", "violin", "rug"],
-            index=1
-        )
-        
-        extra_args = {
-            "nbins": nbins,
-            "marginal": None if marginal == "None" else marginal
-        }
-    
-    elif viz_types[viz_type] == "bar":
-        sort_bars = st.sidebar.checkbox("Sort Bars", value=True)
-        extra_args = {"sort": sort_bars}
-    
-    elif viz_types[viz_type] == "box":
-        notched = st.sidebar.checkbox("Notched Box Plot", value=False)
-        extra_args = {"notched": notched}
-    
-    elif viz_types[viz_type] == "pie":
-        donut = st.sidebar.checkbox("Donut Chart", value=True)
-        hole_size = st.sidebar.slider("Hole Size", min_value=0.0, max_value=0.8, value=0.4) if donut else 0.0
-        extra_args = {"hole": hole_size}
-    
-    # Create the visualization
-    st.subheader(f"{viz_type} Visualization")
-    
-    if selected_columns:
-        with st.spinner("Creating visualization..."):
-            fig = create_visualization(df, viz_types[viz_type], selected_columns, **extra_args)
-            
+                fig = None
+
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
-                
-                # Download options
-                st.download_button(
-                    label="Download as HTML",
-                    data=io.StringIO(fig.to_html()).getvalue(),
-                    file_name=f"{viz_type.lower().replace(' ', '_')}_viz.html",
-                    mime="text/html"
-                )
-            else:
-                st.error("Failed to create visualization. Please try different columns or settings.")
-    else:
-        st.info("Please select columns for visualization.")
-    
-    # Quick visualization gallery
-    st.markdown("---")
-    st.subheader("Quick Visualization Gallery")
-    st.write("Click to generate common visualizations:")
-    
-    gallery_col1, gallery_col2, gallery_col3 = st.columns(3)
-    
-    with gallery_col1:
-        if st.button("📊 Data Type Distribution"):
-            with st.spinner("Creating visualization..."):
-                # Count columns by data type
-                dtype_counts = df.dtypes.value_counts().reset_index()
-                dtype_counts.columns = ['Data Type', 'Count']
-                
-                fig = px.bar(dtype_counts, x='Data Type', y='Count', 
-                            title="Column Count by Data Type",
-                            color_discrete_sequence=['#3366cc'])
-                
-                st.plotly_chart(fig, use_container_width=True)
-    
-    with gallery_col2:
-        if st.button("🧩 Missing Values Overview"):
-            with st.spinner("Creating visualization..."):
-                # Calculate missing value percentages
-                missing_df = pd.DataFrame({
-                    'Column': df.columns,
-                    'Missing %': round(df.isnull().sum() / len(df) * 100,2) #changed round syntax
-                }).sort_values('Missing %', ascending=False)
-                
-                fig = px.bar(missing_df, x='Column', y='Missing %',
-                            title="Missing Values by Column (%)",
-                            color='Missing %',
-                            color_continuous_scale='Blues')
-                
-                fig.update_layout(xaxis={'categoryorder':'total descending'})
-                st.plotly_chart(fig, use_container_width=True)
-    
-    with gallery_col3:
-        if len(st.session_state.numerical_columns) >= 2:
-            if st.button("🔄 Correlation Matrix"):
-                with st.spinner("Creating visualization..."):
-                    # Select only numerical columns with less than 20 columns for readability
-                    num_cols = st.session_state.numerical_columns[:min(15, len(st.session_state.numerical_columns))]
-                    corr = df[num_cols].corr()
-                    
-                    fig = px.imshow(corr,
-                                   title="Correlation Matrix",
-                                   color_continuous_scale='RdBu_r',
-                                   zmin=-1, zmax=1)
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.button("🔄 Correlation Matrix", disabled=True)
-            st.caption("Need at least 2 numerical columns")
-
 def display_insights_tab():
     """Display the insights tab content"""
     display_header()
